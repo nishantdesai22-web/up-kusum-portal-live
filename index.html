@@ -1763,6 +1763,7 @@
           </div>
         </div>
 
+        <div class="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-2 text-xs"><span class="font-bold text-slate-800">Vendor List:</span>${(db.vendors||[]).map(v=>`<span class="px-2 py-1 rounded-full bg-slate-100 border border-slate-200">${v}${currentUser.role==="admin"?` <button onclick="vendorDel('${v.replace(/'/g,"\\'")}')" class="text-rose-500">×</button>`:""}</span>`).join("")||'<span class="text-slate-400">No vendors yet</span>'}${editable?`<button onclick="vendorAdd()" class="px-2 py-1 rounded bg-blue-700 text-white font-semibold">+ Add vendor</button><button onclick="cmpAdd()" class="px-2 py-1 rounded bg-emerald-700 text-white font-semibold">+ Add package row</button>`:""}</div>
         <!-- P1-P17 Comparative Quotation Control (Scales Qty to Selected Site or Portfolio) -->
         <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
           <div class="px-5 py-3.5 border-b border-slate-200 flex justify-between items-center">
@@ -1781,9 +1782,9 @@
                   <th class="px-2 py-2.5 text-right">Unit Rate (₹)</th>
                   <th class="px-3 py-2.5 text-right">Total BoQ Baseline (₹)</th>
                   <th class="px-2 py-2.5 text-right">Target Rate (₹)</th>
-                  <th class="px-2 py-2.5 text-right">Vendor 1 Rate</th>
-                  <th class="px-2 py-2.5 text-right">Vendor 2 Rate</th>
-                  <th class="px-2 py-2.5 text-right">Vendor 3 Rate</th>
+                  <th class="px-2 py-2.5" style="min-width:175px">Vendor 1 — Name · Rate · Quote file</th>
+                  <th class="px-2 py-2.5" style="min-width:175px">Vendor 2 — Name · Rate · Quote file</th>
+                  <th class="px-2 py-2.5" style="min-width:175px">Vendor 3 — Name · Rate · Quote file</th>
                   <th class="px-2 py-2.5 text-right">Actual PO Rate</th>
                   <th class="px-3 py-2.5 text-right">L1 Total (₹L)</th>
                   <th class="px-3 py-2.5">Status</th>
@@ -1799,19 +1800,19 @@
                   const status = Number(c.poRate) > 0 ? "PO Placed" : quotes.length > 0 ? "Quoted" : "Not Started";
                   return `
                     <tr class="hover:bg-slate-50">
-                      <td class="px-3 py-2 mono font-bold text-blue-600">${c.priority}</td>
-                      <td class="px-3 py-2 font-medium text-slate-900">${c.pkg}</td>
+                      <td class="px-3 py-2 mono font-bold text-blue-600">${c.priority}${currentUser.role==="admin"?` <button title="Delete row" onclick="cmpDel(${idx})" class="text-rose-500">✕</button>`:""}</td>
+                      <td class="px-3 py-1.5"><select ${editable?'':'disabled'} onchange="cmpPkg(${idx},this.value)" class="edit-input" style="max-width:230px"><option value="">— Select package —</option>${db.boq.map(b=>`<option value="${b.ref}" ${b.ref===c.ref?'selected':''}>${b.ref} — ${String(b.item).replace(/"/g,'&quot;')}</option>`).join("")}</select></td>
                       <td class="px-2 py-2 mono text-slate-500">${c.ref}</td>
                       <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${siteQty}" onchange="cmpSet(${idx},'qty',this.value)" class="edit-input w-24 text-right" /></td>
                       <td class="px-2 py-1.5"><input type="text" ${editable?'':'disabled'} value="${c.unit}" onchange="cmpSet(${idx},'uom',this.value)" class="edit-input w-16" /></td>
                       <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${Math.round((Number(c.baseRate)||0)*100)/100}" onchange="cmpSet(${idx},'rate',this.value)" class="edit-input w-28 text-right" /></td>
                       <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${Math.round(baseTotal)}" onchange="cmpSet(${idx},'total',this.value)" class="edit-input w-32 text-right font-semibold" /><div class="text-[10px] text-slate-400 mono">₹${fmtLakh(baseTotal)} L</div></td>
                       <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${c.targetRate??''}" onchange="db.comparison[${idx}].targetRate=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-24 text-right" /></td>
-                      <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${c.q1??''}" onchange="db.comparison[${idx}].q1=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-24 text-right" /></td>
-                      <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${c.q2??''}" onchange="db.comparison[${idx}].q2=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-24 text-right" /></td>
-                      <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${c.q3??''}" onchange="db.comparison[${idx}].q3=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-24 text-right" /></td>
+                      <td class="px-2 py-1.5 align-top" style="min-width:175px">${vendorCell(c,idx,1,editable)}</td>
+                      <td class="px-2 py-1.5 align-top" style="min-width:175px">${vendorCell(c,idx,2,editable)}</td>
+                      <td class="px-2 py-1.5 align-top" style="min-width:175px">${vendorCell(c,idx,3,editable)}</td>
                       <td class="px-2 py-1.5 text-right"><input type="number" step="any" ${editable?'':'disabled'} value="${c.poRate??''}" onchange="db.comparison[${idx}].poRate=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-24 text-right" /></td>
-                      <td class="px-3 py-2 text-right mono font-bold text-emerald-700">${l1Rate > 0 ? '₹' + fmtLakh(l1Rate * siteQty) + ' L' : '—'}</td>
+                      <td class="px-3 py-2 text-right mono font-bold text-emerald-700">${l1Rate > 0 ? '₹' + fmtLakh(l1Rate * siteQty) + ' L<div class="text-[10px] text-slate-500 font-normal">L1: ' + (c['v'+([c.q1,c.q2,c.q3].findIndex(v=>Number(v)===l1Rate)+1)]||'—') + '</div>' : '—'}</td>
                       <td class="px-3 py-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${status==='PO Placed'?'bg-emerald-100 text-emerald-800':status==='Quoted'?'bg-blue-100 text-blue-800':'bg-slate-100 text-slate-600'}">${status}</span></td>
                     </tr>
                   `;
@@ -2674,6 +2675,47 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
     renderOverviewPage=function(c,m){ _ovB(c,m); try{ c.insertAdjacentHTML("afterbegin",budgetAlertHTML(m)); }catch(e){ console.error(e); } };
     const _bpB=renderBudgetPage;
     renderBudgetPage=function(c,m){ _bpB(c,m); try{ c.insertAdjacentHTML("afterbegin",budgetAlertHTML(m)); }catch(e){ console.error(e); } };
+  </script>
+<script>
+    function _esc(t){ return String(t==null?"":t).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+    function vendorNames(c){ const set=new Set(db.vendors||[]); [c.v1,c.v2,c.v3].forEach(v=>{ if(v) set.add(v); }); return [...set]; }
+    function vendorCell(c,idx,slot,ed){
+      const files=(c.files&&c.files["v"+slot])||[], cur=c["v"+slot]||"", q=c["q"+slot];
+      return `<select ${ed?"":"disabled"} onchange="cmpVendor(${idx},${slot},this.value)" class="edit-input w-full mb-1"><option value="">— Vendor —</option>${vendorNames(c).map(v=>`<option value="${_esc(v)}" ${v===cur?"selected":""}>${_esc(v)}</option>`).join("")}${ed?'<option value="__new__">➕ Add new vendor…</option>':""}</select>
+        <input type="number" step="any" ${ed?"":"disabled"} placeholder="Rate ₹" value="${q??""}" onchange="db.comparison[${idx}].q${slot}=this.value===''?null:Number(this.value);saveDB();renderActivePage()" class="edit-input w-full text-right mb-1" />
+        ${files.map((f,k)=>`<div class="text-[10px] flex justify-between gap-1"><a href="#" onclick="cmpOpen('${_esc(f.path)}');return false" class="text-blue-700 underline truncate" title="${_esc(f.name)}">📄 ${_esc(f.name)}</a>${currentUser.role==="admin"?`<button onclick="cmpDelFile(${idx},${slot},${k})" class="text-rose-500">✕</button>`:""}</div>`).join("")}
+        ${ed?`<label class="text-[10px] text-blue-700 underline cursor-pointer">📎 Upload quotation<input type="file" class="hidden" accept=".pdf,.xlsx,.xls,.doc,.docx,.png,.jpg,.jpeg" onchange="cmpUpload(${idx},${slot},this)" /></label>`:""}`;
+    }
+    function cmpVendor(i,slot,val){
+      const c=db.comparison[i];
+      if(val==="__new__"){ const n=(prompt("New vendor name")||"").trim(); if(n){ db.vendors=db.vendors||[]; if(!db.vendors.includes(n)) db.vendors.push(n); c["v"+slot]=n; } }
+      else c["v"+slot]=val;
+      saveDB(); renderActivePage();
+    }
+    function vendorAdd(){ const n=(prompt("Vendor name")||"").trim(); if(!n) return; db.vendors=db.vendors||[]; if(!db.vendors.includes(n)) db.vendors.push(n); saveDB(); renderActivePage(); }
+    function vendorDel(n){ if(currentUser.role!=="admin"||!confirm("Remove "+n+" from the vendor list? Existing quotations keep this name.")) return; db.vendors=(db.vendors||[]).filter(v=>v!==n); saveDB(); renderActivePage(); }
+    function cmpPkg(i,ref){
+      const c=db.comparison[i], b=db.boq.find(x=>x.ref===ref); if(!b) return;
+      c.ref=b.ref; c.pkg=b.item; c.unit=b.unit; c.baseRate=Number(b.lakhana.rate)||0;
+      c.qty=["lakhana","udi","rajawali"].reduce((a,k)=>a+(Number(b[k].qty)||0),0); c.qtyOv=null;
+      saveDB(); renderActivePage();
+    }
+    function cmpAdd(){ db.comparison.push({priority:"P"+(db.comparison.length+1),pkg:"",ref:"",unit:"",qty:0,baseRate:0,targetRate:null,v1:"",q1:null,v2:"",q2:null,v3:"",q3:null,poRate:null}); saveDB(); renderActivePage(); }
+    function cmpDel(i){ if(currentUser.role!=="admin"||!confirm("Delete this package row?")) return; db.comparison.splice(i,1); saveDB(); renderActivePage(); }
+    async function cmpUpload(i,slot,inp){
+      const f=inp.files[0]; if(!f) return;
+      if(f.size>10*1024*1024){ alert("File too large (max 10 MB)."); return; }
+      const c=db.comparison[i], safe=f.name.replace(/[^\w.\-]+/g,"_"), path="l1/"+(c.ref||"pkg"+i)+"/v"+slot+"/"+Date.now()+"_"+safe;
+      const {error}=await sb.storage.from("quotations").upload(path,f);
+      if(error){ alert("Upload failed: "+error.message); return; }
+      c.files=c.files||{}; (c.files["v"+slot]=c.files["v"+slot]||[]).push({name:f.name,path,size:f.size,at:new Date().toISOString().slice(0,10)});
+      saveDB(); renderActivePage();
+    }
+    async function cmpOpen(path){ const {data,error}=await sb.storage.from("quotations").createSignedUrl(path,300); if(error){ alert(error.message); return; } window.open(data.signedUrl,"_blank"); }
+    async function cmpDelFile(i,slot,k){
+      if(currentUser.role!=="admin"||!confirm("Delete this file?")) return;
+      const arr=db.comparison[i].files["v"+slot], f=arr[k]; await sb.storage.from("quotations").remove([f.path]); arr.splice(k,1); saveDB(); renderActivePage();
+    }
   </script>
 </body>
 </html>
