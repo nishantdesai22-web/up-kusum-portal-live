@@ -252,6 +252,10 @@
               <i data-lucide="layers" class="w-4 h-4"></i>
               <span>5. Civil / Mech / Elec Progress</span>
             </button>
+            <button onclick="navigate('bvc')" id="nav_bvc" class="sidebar-btn">
+              <i data-lucide="wallet" class="w-4 h-4"></i>
+              <span>6. Budget &amp; Variations</span>
+            </button>
           </div>
         </div>
 
@@ -774,12 +778,14 @@
 
         const orderValue = p.dcMWp * p.orderRatePerMWp;
         const contingencyINR = orderValue * (p.contingencyPct / 100);
-        const costBudgetTarget = orderValue - contingencyINR;
+        const costBudgetTarget = Number(p.budgetOverride) > 0 ? Number(p.budgetOverride) : orderValue - contingencyINR;
         const boqBaselineCost = rows.reduce((s, r) => s + r.budgetAmount, 0);
         const quotedCost = rows.reduce((s, r) => s + r.quotedTotal, 0);
         const committedCost = rows.reduce((s, r) => s + r.committedTotal, 0);
         const actualCost = rows.reduce((s, r) => s + r.actualTotal, 0);
-        const forecastCost = rows.reduce((s, r) => s + r.forecastCost, 0);
+        const varApproved = (db.variations||[]).filter(v => v.site === p.id && v.status === "Approved").reduce((s, v) => s + (Number(v.amount)||0), 0);
+        const varPending = (db.variations||[]).filter(v => v.site === p.id && v.status === "Pending").reduce((s, v) => s + (Number(v.amount)||0), 0);
+        const forecastCost = rows.reduce((s, r) => s + r.forecastCost, 0) + varApproved;
         const procuredCost = rows.filter(r => r.stage === "PO Placed" || r.stage === "Invoiced").reduce((s, r) => s + r.forecastCost, 0);
         const varianceVsBudget = costBudgetTarget - forecastCost;
         const forecastSurplus = orderValue - forecastCost;
@@ -816,7 +822,7 @@
           orderValue, contingencyINR, costBudgetTarget, boqBaselineCost,
           quotedCost, committedCost, actualCost, forecastCost, procuredCost,
           varianceVsBudget, forecastSurplus, forecastMarginPct, procuredPct,
-          ratePendingLines, rag,
+          ratePendingLines, rag, varApproved, varPending,
           overallProgressPct: calcFnProgress(null),
           engProgressPct: calcFnProgress("engineering"),
           procProgressPct: calcFnProgress("procurement"),
@@ -862,6 +868,8 @@
         mdlApproved: activeMdlRows.filter(m => m.status === "Approved").length,
         mdlAttached: activeMdlRows.filter(m => m.fileName !== "").length
       };
+      portfolio.varApproved = activeProjects.reduce((s, p) => s + p.varApproved, 0);
+      portfolio.varPending = activeProjects.reduce((s, p) => s + p.varPending, 0);
       portfolio.mdlApprovalPct = portfolio.mdlTotal > 0 ? (portfolio.mdlApproved / portfolio.mdlTotal) * 100 : 0;
       portfolio.varianceVsBudget = portfolio.costBudgetTarget - portfolio.forecastCost;
       portfolio.forecastSurplus = portfolio.orderValue - portfolio.forecastCost;
@@ -911,6 +919,7 @@
       else if (activePage === "store") renderStorePage(container, model);
       else if (activePage === "photos") renderPhotosPage(container, model);
       else if (activePage === "cme") renderCmePage(container, model);
+      else if (activePage === "bvc") renderBvcPage(container, model);
 
       lucide.createIcons();
     }
@@ -2715,6 +2724,31 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
     async function cmpDelFile(i,slot,k){
       if(currentUser.role!=="admin"||!confirm("Delete this file?")) return;
       const arr=db.comparison[i].files["v"+slot], f=arr[k]; await sb.storage.from("quotations").remove([f.path]); arr.splice(k,1); saveDB(); renderActivePage();
+    }
+  </script>
+<script>
+    function ensureBvc(){ if(!db.variations) db.variations=[]; if(!db.pkgBudget) db.pkgBudget={}; }
+    function bvOver(pid,v){ const p=db.projects.find(x=>x.id===pid); p.budgetOverride=(v===""||Number(v)<=0)?null:Number(v); saveDB(); renderActivePage(); }
+    function bvAdd(){ ensureBvc(); db.variations.push({id:Date.now(),site:db.projects[0].id,desc:"",reason:"",amount:0,status:"Pending"}); saveDB(); renderActivePage(); }
+    function bvSet(id,f,v){ const x=db.variations.find(z=>z.id===id); x[f]=(f==="amount")?(Number(v)||0):v; saveDB(); renderActivePage(); }
+    function bvDel(id){ if(currentUser.role!=="admin"||!confirm("Delete this variation?")) return; db.variations=db.variations.filter(z=>z.id!==id); saveDB(); renderActivePage(); }
+    function bvPkg(ref,v){ ensureBvc(); db.pkgBudget[ref]=Number(v)>0?Number(v):null; saveDB(); renderActivePage(); }
+    function renderBvcPage(container, model){
+      ensureBvc();
+      const adm=currentUser.role==="admin", add=currentUser.role!=="client", R=model.projectRollups;
+      const badge=(fc,b,o)=>fc>o?'<span class="px-2 py-0.5 rounded bg-red-800 text-white font-extrabold text-[10px]">CRITICAL</span>':fc>b?'<span class="px-2 py-0.5 rounded bg-red-600 text-white font-extrabold text-[10px]">OVER BUDGET</span>':'<span class="px-2 py-0.5 rounded bg-emerald-600 text-white font-bold text-[10px]">WITHIN BUDGET</span>';
+      const tot=f=>R.reduce((a,p)=>a+p[f],0);
+      let h=`<div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="px-5 py-3 border-b border-slate-200"><h3 class="text-sm font-bold">Budget Control — Site-wise (all amounts in ₹)</h3><p class="text-[11px] text-slate-500">Budget = Order value − contingency, unless you enter a budget below. Projected = BOQ forecast + approved variations.</p></div><div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="px-3 py-2 text-left">Site</th><th class="px-3 py-2 text-right">Order Value</th><th class="px-3 py-2 text-right">Auto Budget</th><th class="px-3 py-2 text-right">Your Budget (optional)</th><th class="px-3 py-2 text-right">BOQ Forecast</th><th class="px-3 py-2 text-right">Approved Var.</th><th class="px-3 py-2 text-right">Projected Total</th><th class="px-3 py-2 text-right">Variance</th><th class="px-3 py-2 text-right">Pending Var.</th><th class="px-3 py-2">Status</th></tr></thead><tbody>
+      ${R.map(p=>{ const auto=p.orderValue-p.contingencyINR, vr=p.costBudgetTarget-p.forecastCost; return `<tr><td class="px-3 py-2 font-semibold">${p.name}</td><td class="px-3 py-2 text-right mono">${fmtINR(p.orderValue)}</td><td class="px-3 py-2 text-right mono">${fmtINR(auto)}</td><td class="px-3 py-1.5 text-right"><input type="number" step="any" ${adm?"":"disabled"} placeholder="same as auto" value="${p.budgetOverride||""}" onchange="bvOver('${p.id}',this.value)" class="edit-input w-36 text-right" /></td><td class="px-3 py-2 text-right mono">${fmtINR(p.forecastCost-p.varApproved)}</td><td class="px-3 py-2 text-right mono">${fmtINR(p.varApproved)}</td><td class="px-3 py-2 text-right mono font-bold">${fmtINR(p.forecastCost)}</td><td class="px-3 py-2 text-right mono font-bold ${vr<0?"text-rose-600":"text-emerald-700"}">${vr<0?"−":""}${fmtINR(Math.abs(vr))}</td><td class="px-3 py-2 text-right mono text-amber-700">${fmtINR(p.varPending)}</td><td class="px-3 py-2">${badge(p.forecastCost,p.costBudgetTarget,p.orderValue)}</td></tr>`; }).join("")}
+      <tr class="font-bold bg-slate-50"><td class="px-3 py-2">Total</td><td class="px-3 py-2 text-right mono">${fmtINR(tot("orderValue"))}</td><td class="px-3 py-2"></td><td class="px-3 py-2 text-right mono">${fmtINR(tot("costBudgetTarget"))}</td><td class="px-3 py-2 text-right mono">${fmtINR(tot("forecastCost")-tot("varApproved"))}</td><td class="px-3 py-2 text-right mono">${fmtINR(tot("varApproved"))}</td><td class="px-3 py-2 text-right mono">${fmtINR(tot("forecastCost"))}</td><td class="px-3 py-2 text-right mono ${tot("costBudgetTarget")<tot("forecastCost")?"text-rose-600":"text-emerald-700"}">${tot("costBudgetTarget")<tot("forecastCost")?"−":""}${fmtINR(Math.abs(tot("costBudgetTarget")-tot("forecastCost")))}</td><td class="px-3 py-2 text-right mono text-amber-700">${fmtINR(tot("varPending"))}</td><td class="px-3 py-2">${badge(tot("forecastCost"),tot("costBudgetTarget"),tot("orderValue"))}</td></tr></tbody></table></div></div>`;
+      h+=`<div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="px-5 py-3 border-b border-slate-200 flex justify-between items-center"><div><h3 class="text-sm font-bold">Variation / Extra Cost Register</h3><p class="text-[11px] text-slate-500">Use a negative amount for a saving. Only <b>Approved</b> items add to projected cost; the admin approves.</p></div>${add?'<button onclick="bvAdd()" class="px-3 py-1.5 rounded bg-emerald-700 text-white text-xs font-semibold">+ Add variation</button>':""}</div><div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="px-3 py-2 text-left">Site</th><th class="px-3 py-2 text-left">Description</th><th class="px-3 py-2 text-left">Reason</th><th class="px-3 py-2 text-right">Amount (₹)</th><th class="px-3 py-2 text-left">Status</th><th></th></tr></thead><tbody>
+      ${db.variations.map(v=>`<tr><td class="px-3 py-1.5"><select ${add?"":"disabled"} onchange="bvSet(${v.id},'site',this.value)" class="edit-input">${db.projects.map(p=>`<option value="${p.id}" ${p.id===v.site?"selected":""}>${p.name}</option>`).join("")}</select></td><td class="px-3 py-1.5"><input type="text" ${add?"":"disabled"} value="${_esc(v.desc)}" onchange="bvSet(${v.id},'desc',this.value)" class="edit-input w-56" /></td><td class="px-3 py-1.5"><input type="text" ${add?"":"disabled"} value="${_esc(v.reason)}" onchange="bvSet(${v.id},'reason',this.value)" class="edit-input w-48" /></td><td class="px-3 py-1.5 text-right"><input type="number" step="any" ${add?"":"disabled"} value="${v.amount}" onchange="bvSet(${v.id},'amount',this.value)" class="edit-input w-32 text-right" /></td><td class="px-3 py-1.5"><select ${adm?"":"disabled"} onchange="bvSet(${v.id},'status',this.value)" class="edit-input">${["Pending","Approved","Rejected"].map(x=>`<option ${x===v.status?"selected":""}>${x}</option>`).join("")}</select></td><td class="px-3 py-1.5">${adm?`<button onclick="bvDel(${v.id})" class="text-rose-500">✕</button>`:""}</td></tr>`).join("")||'<tr><td colspan="6" class="px-3 py-4 text-center text-slate-400">No variations yet</td></tr>'}
+      </tbody></table></div></div>`;
+      const g={}; model.activeTrackerRows.forEach(r=>{ const x=g[r.ref]=g[r.ref]||{ref:r.ref,item:r.item,b:0,f:0}; x.b+=r.budgetAmount; x.f+=r.forecastCost; });
+      h+=`<div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="px-5 py-3 border-b border-slate-200"><h3 class="text-sm font-bold">Package-wise Budget vs Projected (${globalSiteFilter==="ALL"?"all sites":"selected site"})</h3><p class="text-[11px] text-slate-500">Package budget defaults to the BOQ baseline. You can enter your own figure for tracking; it does not change the site totals above.</p></div><div class="overflow-x-auto" style="max-height:480px"><table class="w-full text-xs"><thead><tr><th class="px-3 py-2 text-left">Ref</th><th class="px-3 py-2 text-left">Package</th><th class="px-3 py-2 text-right">BOQ Baseline</th><th class="px-3 py-2 text-right">Package Budget</th><th class="px-3 py-2 text-right">Projected</th><th class="px-3 py-2 text-right">Variance</th><th class="px-3 py-2">Flag</th></tr></thead><tbody>
+      ${Object.values(g).map(x=>{ const ov=db.pkgBudget[x.ref], bud=ov>0?ov:x.b, vr=bud-x.f; return `<tr class="${vr<0?"bg-red-50":""}"><td class="px-3 py-1.5 mono font-semibold">${x.ref}</td><td class="px-3 py-1.5">${x.item}</td><td class="px-3 py-1.5 text-right mono">${fmtINR(x.b)}</td><td class="px-3 py-1.5 text-right"><input type="number" step="any" ${adm?"":"disabled"} placeholder="${Math.round(x.b)}" value="${ov||""}" onchange="bvPkg('${x.ref}',this.value)" class="edit-input w-32 text-right" /></td><td class="px-3 py-1.5 text-right mono">${fmtINR(x.f)}</td><td class="px-3 py-1.5 text-right mono font-semibold ${vr<0?"text-rose-600":"text-emerald-700"}">${vr<0?"−":""}${fmtINR(Math.abs(vr))}</td><td class="px-3 py-1.5">${vr<0?'<b class="text-rose-600">OVER</b>':""}</td></tr>`; }).join("")}
+      </tbody></table></div></div>`;
+      container.innerHTML=h;
     }
   </script>
 </body>
