@@ -217,6 +217,9 @@
         <div>
           <p class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Executive Dashboards</p>
           <div class="space-y-1">
+            <button onclick="navigate('eov')" id="nav_eov" style="display:none" class="sidebar-btn"><i data-lucide="gauge" class="w-4 h-4"></i><span>Progress Overview</span></button>
+            <button onclick="navigate('epr')" id="nav_epr" style="display:none" class="sidebar-btn"><i data-lucide="package-check" class="w-4 h-4"></i><span>Procurement Status</span></button>
+            <button onclick="navigate('emdl')" id="nav_emdl" style="display:none" class="sidebar-btn"><i data-lucide="file-check" class="w-4 h-4"></i><span>Drawing (MDL) Status</span></button>
             <button onclick="navigate('overview')" id="nav_overview" class="sidebar-btn active">
               <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
               <span>Portfolio & Client View</span>
@@ -490,6 +493,9 @@
       document.getElementById("currentUserBadge").textContent=label;
       document.querySelectorAll('button[onclick="resetToFactoryDefaults()"]').forEach(x=>x.style.display=role==="admin"?"":"none");
       document.querySelectorAll('label:has(input[type=file][accept=".json"])').forEach(x=>x.style.display=role==="admin"?"":"none");
+      const ec=role==="endclient", ecOnly=["eov","epr","emdl"], ecOk=ecOnly.concat(["cme","construction","commissioning","dpr","photos"]);
+      document.querySelectorAll(".sidebar-btn").forEach(b=>{ const id=b.id.replace("nav_",""); b.style.display=ec?(ecOk.includes(id)?"":"none"):(ecOnly.includes(id)?"none":""); });
+      if(ec){ activePage="eov"; const nb=document.getElementById("nav_eov"); document.querySelectorAll(".sidebar-btn").forEach(b=>b.classList.remove("active")); if(nb) nb.classList.add("active"); }
     }
     async function doLogin(){
       const {error}=await sb.auth.signInWithPassword({email:document.getElementById("lgEmail").value.trim(),password:document.getElementById("lgPass").value});
@@ -504,21 +510,22 @@
         if(!session){ lockScreen("Please sign in to continue.",true); return false; }
         VIEWER={id:session.user.id,name:session.user.email};
         const {data:pr}=await sb.from("profiles").select("role").eq("id",VIEWER.id).maybeSingle();
-        const role=(pr&&pr.role)||"client";
-        setRole(role,({admin:"Admin",site:"Engineering / Site",client:"Client (View only)"})[role]+" — "+VIEWER.name);
+        const role=(pr&&pr.role)||"endclient";
+        setRole(role,({admin:"Admin",site:"Engineering / Site",client:"Client (View only)",endclient:"End Client (Progress view)"})[role]+" — "+VIEWER.name);
         document.getElementById("loginModal").classList.add("hidden");
         return true;
       }catch(e){ console.error(e); lockScreen("Could not connect. Please reload.",false); return false; }
     }
     async function logout(){ if(sb) await sb.auth.signOut(); location.reload(); }
     async function loadShared(){
-      const {data,error}=await sb.from("portal_state").select("data").eq("id","main").maybeSingle();
+      const {data,error}=await sb.from(currentUser.role==="endclient"?"portal_public":"portal_state").select("data").eq("id","main").maybeSingle();
       if(error) throw error; return data?migrateMms(data.data):null;
     }
     async function pushShared(){
-      if(!sb||currentUser.role==="client") return;
+      if(!sb||["client","endclient"].includes(currentUser.role)) return;
       const badge=document.getElementById("saveStatus");
-      const {error}=await sb.from("portal_state").upsert({id:"main",data:db,updated_at:new Date().toISOString(),updated_by:VIEWER.id});
+      let {error}=await sb.from("portal_state").upsert({id:"main",data:db,updated_at:new Date().toISOString(),updated_by:VIEWER.id});
+      if(!error){ const r2=await sb.from("portal_public").upsert({id:"main",data:sanitizeForEndClient(db),updated_at:new Date().toISOString(),updated_by:VIEWER.id}); error=r2.error; }
       if(badge) badge.textContent=error?"● Save failed":"● Saved "+new Date().toLocaleTimeString();
       if(error) console.error(error);
     }
@@ -632,7 +639,7 @@
     }
 
     function saveDB() {
-      if(currentUser.role==="client") return;
+      if(["client","endclient"].includes(currentUser.role)) return;
       const badge=document.getElementById("saveStatus"); if(badge) badge.textContent="● Saving…";
       clearTimeout(saveTimer); saveTimer=setTimeout(pushShared,800);
     }
@@ -920,6 +927,9 @@
       else if (activePage === "photos") renderPhotosPage(container, model);
       else if (activePage === "cme") renderCmePage(container, model);
       else if (activePage === "bvc") renderBvcPage(container, model);
+      else if (activePage === "eov") renderEovPage(container, model);
+      else if (activePage === "epr") renderEprPage(container, model);
+      else if (activePage === "emdl") renderEmdlPage(container, model);
 
       lucide.createIcons();
     }
@@ -2480,9 +2490,9 @@
         return;
       }
       db=d; if(!db.mdlTracker) db.mdlTracker={};
-      if(window._migrated && currentUser.role==="admin") pushShared();
+      if(currentUser.role==="admin") pushShared();
       renderActivePage();
-      sb.channel("ps").on("postgres_changes",{event:"*",schema:"public",table:"portal_state"},pl=>{
+      sb.channel("ps").on("postgres_changes",{event:"*",schema:"public",table:currentUser.role==="endclient"?"portal_public":"portal_state"},pl=>{
         if(pl.new&&pl.new.updated_by!==VIEWER.id){ db=migrateMms(pl.new.data); renderActivePage(); const b=document.getElementById("saveStatus"); if(b) b.textContent="● Updated by a colleague"; }
       }).subscribe();
     });
@@ -2747,6 +2757,44 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
       const g={}; model.activeTrackerRows.forEach(r=>{ const x=g[r.ref]=g[r.ref]||{ref:r.ref,item:r.item,b:0,f:0}; x.b+=r.budgetAmount; x.f+=r.forecastCost; });
       h+=`<div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="px-5 py-3 border-b border-slate-200"><h3 class="text-sm font-bold">Package-wise Budget vs Projected (${globalSiteFilter==="ALL"?"all sites":"selected site"})</h3><p class="text-[11px] text-slate-500">Package budget defaults to the BOQ baseline. You can enter your own figure for tracking; it does not change the site totals above.</p></div><div class="overflow-x-auto" style="max-height:480px"><table class="w-full text-xs"><thead><tr><th class="px-3 py-2 text-left">Ref</th><th class="px-3 py-2 text-left">Package</th><th class="px-3 py-2 text-right">BOQ Baseline</th><th class="px-3 py-2 text-right">Package Budget</th><th class="px-3 py-2 text-right">Projected</th><th class="px-3 py-2 text-right">Variance</th><th class="px-3 py-2">Flag</th></tr></thead><tbody>
       ${Object.values(g).map(x=>{ const ov=db.pkgBudget[x.ref], bud=ov>0?ov:x.b, vr=bud-x.f; return `<tr class="${vr<0?"bg-red-50":""}"><td class="px-3 py-1.5 mono font-semibold">${x.ref}</td><td class="px-3 py-1.5">${x.item}</td><td class="px-3 py-1.5 text-right mono">${fmtINR(x.b)}</td><td class="px-3 py-1.5 text-right"><input type="number" step="any" ${adm?"":"disabled"} placeholder="${Math.round(x.b)}" value="${ov||""}" onchange="bvPkg('${x.ref}',this.value)" class="edit-input w-32 text-right" /></td><td class="px-3 py-1.5 text-right mono">${fmtINR(x.f)}</td><td class="px-3 py-1.5 text-right mono font-semibold ${vr<0?"text-rose-600":"text-emerald-700"}">${vr<0?"−":""}${fmtINR(Math.abs(vr))}</td><td class="px-3 py-1.5">${vr<0?'<b class="text-rose-600">OVER</b>':""}</td></tr>`; }).join("")}
+      </tbody></table></div></div>`;
+      container.innerHTML=h;
+    }
+  </script>
+<script>
+    function sanitizeForEndClient(src){
+      const d=JSON.parse(JSON.stringify(src)), S=["lakhana","udi","rajawali"];
+      d.projects.forEach(p=>{ p.orderRatePerMWp=0; p.contingencyPct=0; delete p.budgetOverride; });
+      d.boq.forEach(b=>S.forEach(k=>{ b[k].rate=Number(b[k].rate)>0?1:0; }));
+      Object.keys(d.tracker||{}).forEach(k=>{ const t=d.tracker[k]; ["quoteRate","poRate","actualRate"].forEach(f=>{ t[f]=Number(t[f])>0?1:null; }); });
+      d.comparison=[]; delete d.variations; delete d.pkgBudget;
+      Object.keys(d.mdlTracker||{}).forEach(k=>{ d.mdlTracker[k].fileData=""; });
+      return d;
+    }
+    const _stg={"Rate Pending":["Not started","bg-slate-100 text-slate-600"],"Baseline Only":["Planned","bg-slate-100 text-slate-700"],"Quoted":["Quotation received","bg-blue-100 text-blue-800"],"PO Placed":["Order placed","bg-emerald-100 text-emerald-800"],"Invoiced":["Delivered / invoiced","bg-emerald-200 text-emerald-900"]};
+    function renderEovPage(container, model){
+      ensureCme(); const ps=model.activeProjects, tw=ps.reduce((a,p)=>a+p.dcMWp,0)||1, calc=ps.map(p=>({p,c:cmeCalc(p.id)}));
+      const ag=f=>calc.reduce((a,x)=>a+f(x.c)*x.p.dcMWp,0)/tw, po=model.portfolio;
+      const card=(l,v,c)=>`<div class="bg-white border border-slate-200 rounded-xl p-4"><p class="text-[11px] uppercase font-semibold text-slate-500">${l}</p><p class="text-2xl font-bold mono mt-1" style="color:${c}">${v.toFixed(1)}%</p>${_bar(v,c)}</div>`;
+      let h=renderSiteSelectorBar("Project Progress Overview");
+      h+=`<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">${card("Overall progress",ag(c=>c.overall),"#0b1f3a")}${card("Civil works",ag(c=>c.disc.C),CME_D.C.c)}${card("Mechanical works",ag(c=>c.disc.M),CME_D.M.c)}${card("Electrical works",ag(c=>c.disc.E),CME_D.E.c)}</div>
+      <div class="grid grid-cols-2 gap-4"><div class="bg-white border border-slate-200 rounded-xl p-4"><p class="text-[11px] uppercase font-semibold text-slate-500">Items ordered</p><p class="text-xl font-bold mono">${po.orderedLines} / ${po.totalLines}</p></div><div class="bg-white border border-slate-200 rounded-xl p-4"><p class="text-[11px] uppercase font-semibold text-slate-500">Drawings approved</p><p class="text-xl font-bold mono">${po.mdlApproved} / ${po.mdlTotal}</p></div></div>`;
+      container.innerHTML=h+insightsHTML(model); drawSCurve(model);
+    }
+    function renderEprPage(container, model){
+      const rows=model.activeTrackerRows, cnt={}; rows.forEach(r=>cnt[r.stage]=(cnt[r.stage]||0)+1);
+      let h=renderSiteSelectorBar("Procurement Status")+`<div class="flex flex-wrap gap-2 text-xs">${Object.keys(_stg).map(k=>`<span class="px-3 py-1.5 rounded-full font-semibold ${_stg[k][1]}">${_stg[k][0]}: ${cnt[k]||0}</span>`).join("")}</div>
+      <div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="overflow-x-auto" style="max-height:620px"><table class="w-full text-xs"><thead class="sticky top-0"><tr><th class="px-3 py-2 text-left">Site</th><th class="px-3 py-2 text-left">Ref</th><th class="px-3 py-2 text-left">Item</th><th class="px-3 py-2 text-right">Quantity</th><th class="px-3 py-2 text-left">Vendor</th><th class="px-3 py-2 text-left">Status</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr class="border-t border-slate-100"><td class="px-3 py-1.5 whitespace-nowrap">${r.projectName}</td><td class="px-3 py-1.5 mono">${r.ref}</td><td class="px-3 py-1.5">${r.item}</td><td class="px-3 py-1.5 text-right mono">${r.budgetQty} ${r.unit}</td><td class="px-3 py-1.5">${_esc(r.vendor)||"—"}</td><td class="px-3 py-1.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${_stg[r.stage][1]}">${_stg[r.stage][0]}</span></td></tr>`).join("")}
+      </tbody></table></div></div>`;
+      container.innerHTML=h;
+    }
+    function renderEmdlPage(container, model){
+      const rows=model.activeMdlRows, cnt={}; rows.forEach(r=>cnt[r.status]=(cnt[r.status]||0)+1);
+      const col={"Approved":"bg-emerald-100 text-emerald-800","Under Client Review":"bg-blue-100 text-blue-800","Submitted by Consultant":"bg-indigo-100 text-indigo-800","Commented / Revise":"bg-amber-100 text-amber-800","Not Submitted":"bg-slate-100 text-slate-600"};
+      let h=renderSiteSelectorBar("Drawing (MDL) Status")+`<div class="flex flex-wrap gap-2 text-xs">${Object.keys(col).map(k=>`<span class="px-3 py-1.5 rounded-full font-semibold ${col[k]}">${k}: ${cnt[k]||0}</span>`).join("")}</div>
+      <div class="bg-white border border-slate-200 rounded-xl overflow-hidden"><div class="overflow-x-auto" style="max-height:620px"><table class="w-full text-xs"><thead class="sticky top-0"><tr><th class="px-3 py-2 text-left">Site</th><th class="px-3 py-2 text-left">Doc No.</th><th class="px-3 py-2 text-left">Title</th><th class="px-3 py-2 text-left">Category</th><th class="px-3 py-2">Rev</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2 text-left">Submitted</th><th class="px-3 py-2 text-left">Approved</th><th class="px-3 py-2 text-left">Remarks</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr class="border-t border-slate-100"><td class="px-3 py-1.5 whitespace-nowrap">${r.projectName}</td><td class="px-3 py-1.5 mono">${r.docNo}</td><td class="px-3 py-1.5">${r.title}</td><td class="px-3 py-1.5">${r.category}</td><td class="px-3 py-1.5 text-center mono">${r.rev}</td><td class="px-3 py-1.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${col[r.status]||""}">${r.status}</span></td><td class="px-3 py-1.5">${r.consultantDate||"—"}</td><td class="px-3 py-1.5">${r.approvedDate||"—"}</td><td class="px-3 py-1.5">${_esc(r.remarks)}</td></tr>`).join("")}
       </tbody></table></div></div>`;
       container.innerHTML=h;
     }
