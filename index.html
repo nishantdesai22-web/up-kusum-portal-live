@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
     body {
@@ -258,6 +259,10 @@
             <button onclick="navigate('bvc')" id="nav_bvc" class="sidebar-btn">
               <i data-lucide="wallet" class="w-4 h-4"></i>
               <span>6. Budget &amp; Variations</span>
+            </button>
+            <button onclick="navigate('avl')" id="nav_avl" class="sidebar-btn">
+              <i data-lucide="badge-check" class="w-4 h-4"></i>
+              <span>7. Approved Vendor List</span>
             </button>
           </div>
         </div>
@@ -927,6 +932,7 @@
       else if (activePage === "photos") renderPhotosPage(container, model);
       else if (activePage === "cme") renderCmePage(container, model);
       else if (activePage === "bvc") renderBvcPage(container, model);
+      else if (activePage === "avl") renderAvlPage(container, model);
       else if (activePage === "eov") renderEovPage(container, model);
       else if (activePage === "epr") renderEprPage(container, model);
       else if (activePage === "emdl") renderEmdlPage(container, model);
@@ -2767,7 +2773,7 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
       d.projects.forEach(p=>{ p.orderRatePerMWp=0; p.contingencyPct=0; delete p.budgetOverride; });
       d.boq.forEach(b=>S.forEach(k=>{ b[k].rate=Number(b[k].rate)>0?1:0; }));
       Object.keys(d.tracker||{}).forEach(k=>{ const t=d.tracker[k]; ["quoteRate","poRate","actualRate"].forEach(f=>{ t[f]=Number(t[f])>0?1:null; }); });
-      d.comparison=[]; delete d.variations; delete d.pkgBudget;
+      d.comparison=[]; delete d.variations; delete d.pkgBudget; delete d.avl;
       Object.keys(d.mdlTracker||{}).forEach(k=>{ d.mdlTracker[k].fileData=""; });
       return d;
     }
@@ -2797,6 +2803,72 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
       ${rows.map(r=>`<tr class="border-t border-slate-100"><td class="px-3 py-1.5 whitespace-nowrap">${r.projectName}</td><td class="px-3 py-1.5 mono">${r.docNo}</td><td class="px-3 py-1.5">${r.title}</td><td class="px-3 py-1.5">${r.category}</td><td class="px-3 py-1.5 text-center mono">${r.rev}</td><td class="px-3 py-1.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${col[r.status]||""}">${r.status}</span></td><td class="px-3 py-1.5">${r.consultantDate||"—"}</td><td class="px-3 py-1.5">${r.approvedDate||"—"}</td><td class="px-3 py-1.5">${_esc(r.remarks)}</td></tr>`).join("")}
       </tbody></table></div></div>`;
       container.innerHTML=h;
+    }
+  </script>
+<script>
+    var AVL_XL=null;
+    function avlSlot(slot){ return (db.avl||[]).filter(x=>x.slot===slot).sort((a,b)=>b.id-a.id)[0]; }
+    function avlCan(){ return ["admin","site"].includes(currentUser.role); }
+    async function avlUrl(path,dl){ const {data,error}=await sb.storage.from("quotations").createSignedUrl(path,600,dl?{download:true}:undefined); if(error){ alert(error.message); return null; } return data.signedUrl; }
+    async function avlOpen(path,dl){ const u=await avlUrl(path,dl); if(u) window.open(u,"_blank"); }
+    async function avlUpload(slot,inp){
+      const f=inp.files[0]; if(!f) return;
+      if(f.size>20*1024*1024){ alert("File too large (max 20 MB)."); return; }
+      const ok=slot==="AB"?/\.(xlsx|xls|xlsm|csv)$/i.test(f.name):/\.pdf$/i.test(f.name);
+      if(!ok){ alert(slot==="AB"?"Please upload an Excel file (.xlsx or .xls).":"Please upload a PDF file."); return; }
+      const path="avl/"+slot+"/"+Date.now()+"_"+f.name.replace(/[^\w.\-]+/g,"_");
+      const {error}=await sb.storage.from("quotations").upload(path,f);
+      if(error){ alert("Upload failed: "+error.message); return; }
+      db.avl=db.avl||[]; db.avl.push({id:Date.now(),slot,name:f.name,path,size:f.size,at:new Date().toISOString().slice(0,10),by:(VIEWER&&VIEWER.name)||""});
+      AVL_XL=null; saveDB(); renderActivePage();
+    }
+    async function avlDel(id){
+      if(currentUser.role!=="admin"||!confirm("Delete this file version permanently?")) return;
+      const x=db.avl.find(v=>v.id===id); await sb.storage.from("quotations").remove([x.path]);
+      db.avl=db.avl.filter(v=>v.id!==id); AVL_XL=null; saveDB(); renderActivePage();
+    }
+    async function avlLoad(){
+      const f=avlSlot("AB"), box=document.getElementById("avlXl"); if(!f||!box) return;
+      if(AVL_XL&&AVL_XL.path===f.path){ avlDraw(); return; }
+      box.innerHTML='<p class="text-xs text-slate-500 p-4">Loading vendor list…</p>';
+      try{
+        const u=await avlUrl(f.path); if(!u) return;
+        const buf=await (await fetch(u)).arrayBuffer(), wb=XLSX.read(buf,{type:"array"});
+        AVL_XL={path:f.path,wb,sheet:wb.SheetNames[0],q:""}; avlDraw();
+      }catch(e){ box.innerHTML='<p class="text-xs text-rose-600 p-4">Could not read this Excel file. You can still download it using the button above.</p>'; }
+    }
+    function avlSheet(n){ AVL_XL.sheet=n; avlDraw(); }
+    function avlSearch(v){ if(AVL_XL){ AVL_XL.q=v; avlDraw(); } }
+    function avlDraw(){
+      const box=document.getElementById("avlXl"); if(!box||!AVL_XL) return;
+      const rows=XLSX.utils.sheet_to_json(AVL_XL.wb.Sheets[AVL_XL.sheet],{header:1,defval:""}).filter(r=>r.some(c=>String(c).trim()!==""));
+      const q=AVL_XL.q.trim().toLowerCase(), hi=rows.findIndex(r=>r.filter(c=>String(c).trim()!=="").length>=2), head=hi>=0?rows[hi]:[], body=rows.slice(hi+1).filter(r=>!q||r.some(c=>String(c).toLowerCase().includes(q)));
+      const shown=body.slice(0,600), cols=Math.max(head.length,...shown.map(r=>r.length),1);
+      box.innerHTML=`<div class="flex flex-wrap gap-2 px-4 pt-3">${AVL_XL.wb.SheetNames.map(n=>`<button onclick="avlSheet('${_esc(n).replace(/'/g,"\\'")}')" class="px-3 py-1 rounded-full text-xs font-semibold border ${n===AVL_XL.sheet?"bg-slate-900 text-white border-slate-900":"border-slate-300"}">${_esc(n)}</button>`).join("")}</div>
+        <div class="px-4 py-2 text-[11px] text-slate-500">${body.length} row(s)${q?" matching “"+_esc(q)+"”":""}${body.length>600?" — showing first 600, use search to narrow":""}</div>
+        <div class="overflow-auto" style="max-height:560px"><table class="w-full text-xs"><thead class="sticky top-0"><tr>${Array.from({length:cols},(_,i)=>`<th class="px-3 py-2 text-left whitespace-nowrap">${_esc(head[i]||"")}</th>`).join("")}</tr></thead><tbody>${shown.map(r=>`<tr class="border-t border-slate-100">${Array.from({length:cols},(_,i)=>`<td class="px-3 py-1.5">${_esc(r[i]==null?"":r[i])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    }
+    async function avlPdf(){
+      const f=avlSlot("C"), fr=document.getElementById("avlPdf"); if(!f||!fr) return;
+      const u=await avlUrl(f.path); if(u) fr.src=u;
+    }
+    function avlHist(slot){
+      const h=(db.avl||[]).filter(x=>x.slot===slot).sort((a,b)=>b.id-a.id).slice(1);
+      return h.length?`<div class="px-4 pb-3 text-[11px] text-slate-500"><b>Earlier versions:</b> ${h.map(x=>`<a href="#" onclick="avlOpen('${_esc(x.path)}');return false" class="text-blue-700 underline">${_esc(x.name)} (${x.at})</a>${currentUser.role==="admin"?` <button onclick="avlDel(${x.id})" class="text-rose-500">✕</button>`:""}`).join(" · ")}</div>`:"";
+    }
+    function avlHead(slot,title,sub,accept){
+      const f=avlSlot(slot);
+      return `<div class="px-5 py-3 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2"><div><h3 class="text-sm font-bold">${title}</h3><p class="text-[11px] text-slate-500">${f?`Current file: <b>${_esc(f.name)}</b> · uploaded ${f.at}${f.by?" by "+_esc(f.by):""}`:sub}</p></div><div class="flex flex-wrap gap-2 items-center">
+        ${f?`<button onclick="avlOpen('${_esc(f.path)}',true)" class="px-3 py-1.5 rounded border border-slate-300 text-xs font-semibold">Download</button>${slot==="C"?`<button onclick="avlOpen('${_esc(f.path)}')" class="px-3 py-1.5 rounded border border-slate-300 text-xs font-semibold">Open in new tab</button>`:""}`:""}
+        ${avlCan()?`<label class="px-3 py-1.5 rounded bg-blue-700 text-white text-xs font-semibold cursor-pointer">${f?"Replace":"Upload"} file<input type="file" accept="${accept}" class="hidden" onchange="avlUpload('${slot}',this)" /></label>`:""}</div></div>`;
+    }
+    function renderAvlPage(container, model){
+      const a=avlSlot("AB"), c=avlSlot("C");
+      container.innerHTML=`<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">${avlHead("AB","CAT-A &amp; CAT-B — Approved Vendor List (Excel)","No file uploaded yet. Upload the Excel vendor list.",".xlsx,.xls,.xlsm,.csv")}
+        ${a?`<div class="px-4 pt-3"><input type="text" oninput="avlSearch(this.value)" placeholder="Search vendor, item, make…" class="edit-input w-full md:w-96" /></div><div id="avlXl"></div>${avlHist("AB")}`:`<p class="p-6 text-sm text-slate-500">Upload the CAT-A / CAT-B Excel file to review it here.</p>`}</div>
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">${avlHead("C","CAT-C — Balance of System (BoS) Approved Vendors (PDF)","No file uploaded yet. Upload the PDF.",".pdf")}
+        ${c?`<iframe id="avlPdf" title="CAT-C BoS vendor list" style="width:100%;height:680px;border:0"></iframe>${avlHist("C")}`:`<p class="p-6 text-sm text-slate-500">Upload the CAT-C BoS PDF to review it here.</p>`}</div>`;
+      if(a) avlLoad(); if(c) avlPdf();
     }
   </script>
 </body>
