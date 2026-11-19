@@ -236,10 +236,6 @@
         <div>
           <p class="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">EPC Core Functions</p>
           <div class="space-y-1">
-            <button onclick="navigate('sched')" id="nav_sched" class="sidebar-btn">
-              <i data-lucide="calendar-range" class="w-4 h-4 text-rose-600"></i>
-              <span>Execution Schedule & Delivery</span>
-            </button>
             <button onclick="navigate('engineering')" id="nav_engineering" class="sidebar-btn">
               <i data-lucide="compass" class="w-4 h-4 text-indigo-600"></i>
               <span>1. Engineering, MDL & BOQ</span>
@@ -502,7 +498,7 @@
       document.getElementById("currentUserBadge").textContent=label;
       document.querySelectorAll('button[onclick="resetToFactoryDefaults()"]').forEach(x=>x.style.display=role==="admin"?"":"none");
       document.querySelectorAll('label:has(input[type=file][accept=".json"])').forEach(x=>x.style.display=role==="admin"?"":"none");
-      const ec=role==="endclient", ecOnly=["eov","epr","emdl"], ecOk=ecOnly.concat(["sched","cme","construction","commissioning","dpr","photos"]);
+      const ec=role==="endclient", ecOnly=["eov","epr","emdl"], ecOk=ecOnly.concat(["cme","construction","commissioning","dpr","photos"]);
       document.querySelectorAll(".sidebar-btn").forEach(b=>{ const id=b.id.replace("nav_",""); b.style.display=ec?(ecOk.includes(id)?"":"none"):(ecOnly.includes(id)?"none":""); });
       if(ec){ activePage="eov"; const nb=document.getElementById("nav_eov"); document.querySelectorAll(".sidebar-btn").forEach(b=>b.classList.remove("active")); if(nb) nb.classList.add("active"); }
     }
@@ -927,7 +923,6 @@
       if (activePage === "overview") renderOverviewPage(container, model);
       else if (activePage === "budget") renderBudgetPage(container, model);
       else if (activePage === "engineering") renderEngineeringPage(container, model);
-      else if (activePage === "sched") renderSchedPage(container, model);
       else if (activePage === "procurement") renderProcurementPage(container, model);
       else if (activePage === "construction") renderConstructionPage(container, model);
       else if (activePage === "commissioning") renderCommissioningPage(container, model);
@@ -2876,105 +2871,5 @@ e11|E|Termination — 33 kV HT panel|Nos|1|0|1|e7,m10`.split("\n").map(r=>{const
       if(a) avlLoad(); if(c) avlPdf();
     }
   </script>
-<script>
-/* ===== Execution Schedule & Material Delivery Plan (linked to Drawing / MDL approvals) ===== */
-var SCH_TAB="s", SCH_DAY=864e5, SCH_MO="Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
-var schU=function(s){return Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10))/SCH_DAY};
-var schF=function(d){if(d==null)return "–";var x=new Date(d*SCH_DAY);return String(x.getUTCDate()).padStart(2,"0")+"-"+SCH_MO[x.getUTCMonth()]+"-"+String(x.getUTCFullYear()).slice(2)};
-var schToday=function(){return Math.floor(Date.now()/SCH_DAY)};
-var SCH_SEC={1:"A. Engineering, survey & statutory approvals",6:"B. Procurement",7:"C. Civil works",14:"D. Mechanical works",18:"E. Electrical works",24:"F. Testing, inspection & commissioning"};
-/* Drawing groups -> serial numbers in the portal's MDL register */
-var SCH_DG={GA:{n:"PV layout / General Arrangement",sr:[8]},SLD:{n:"Plant AC & DC SLD",sr:[9,10]},MMS:{n:"MMS GA drawing & BOM",sr:[70,73]},CBL:{n:"Solar & AC/HT cable schedules",sr:[34,35]}};
-var SCH_A=[[1,"NTP, project kick-off & site handover",3,"",0,"Client / Richtech"],[2,"Topographical survey & geotechnical investigation",10,"1",0,"Client"],[3,"Detailed engineering – PV layout, SLD, string & cable schedules, MMS design",25,"1",5,"Richtech Engineering"],[4,"Drawing submission & client approval",10,"3",0,"Richtech / Client"],[5,"DISCOM / CEIG drawing approval & connectivity formalities",30,"3",0,"Richtech / Client / DISCOM"],[6,"Vendor finalisation & PO release – long-lead items (MMS, inverters, cables, panels, IDT); modules are client supply",15,"3",-12,"Richtech Procurement"],[7,"Site mobilisation, clearing & levelling",10,"2",0,"Richtech Civil"],[8,"Boundary wall / fencing & gate",30,"7",0,"Richtech Civil"],[9,"Piling coordinates & marking",7,"4,7",0,"Richtech Civil / Survey"],[10,"Piling coordinates & marking w.r.t co-ordinates and boundary cross-check",10,"9",0,"Richtech / Test agency"],[11,"Augering & piling – main works",35,"10",0,"Richtech contractor"],[12,"Foundations – inverter, IDT, LT & HT panel plinths, control room",30,"4,7",0,"Richtech Civil"],[13,"Cable trenches & earth pits",20,"11",-20,"Richtech Civil"],[14,"MMS erection (column posts & superstructure)",45,"11",-20,"Richtech"],[15,"PV module installation (modules supplied by client)",40,"14",-30,"Richtech"],[16,"String inverter mounting",15,"14",-15,"Richtech"],[17,"DC cable laying & string connections (MC4)",30,"15",-25,"Richtech"],[18,"Earthing & lightning protection",25,"14",-30,"Richtech"],[19,"AC cable laying (inverter → ACCB → IDT)",20,"16,13",0,"Richtech"],[20,"LT panel (ACCB) & IDT installation",10,"12",10,"Richtech"],[21,"33 kV HT panel installation, metering & protection",12,"12",10,"Richtech"],[22,"33 kV evacuation: DP structure → remote substation & remote bay (NOT in FSGE scope)",30,"5",15,"Client / DISCOM"],[23,"SCADA, weather station, CCTV & communication",15,"17",-10,"Richtech / SCADA vendor"],[24,"Pre-commissioning tests (IR, polarity, string IV, relay & protection)",12,"17,19,20,21,23",0,"Commissioning Team"],[25,"CEIG inspection & statutory clearance",10,"24",0,"Richtech / CEIG / Client"],[26,"DISCOM line charging approval & grid synchronisation",3,"25,22",0,"Client"],[27,"Trial run, performance test, handover & COD",7,"26",0,"Client"]];
-/* [name, qty basis, unit, activity, buffer, lead, drawings, clientSupply] */
-var SCH_M=[["PV modules – Lot 1 (50%)","MOD","Nos",15,7,35,[],1],["PV modules – Lot 2 (50%)","MOD","Nos",15,-15,35,[],1],["MMS – Lot 1: HDG column posts (30%)","TBC","MT",14,5,30,["GA","MMS"]],["MMS – Lot 2: galvalume superstructure (70%)","TBC","MT",14,-10,30,["GA","MMS"]],["String inverters","INV","Nos",16,5,30,["GA","SLD"]],["DC solar cable 1C x 4 sq.mm","TBC","m",17,5,20,["CBL"]],["MC4 connectors, lugs, glands & consumables","TBC","Lot",17,5,20,["CBL"]],["AC cable 3C x 240 sq.mm","AC800","m",19,5,25,["SLD","CBL"]],["AC cable 1C x 400 sq.mm","AC220","m",19,5,25,["SLD","CBL"]],["LT panel (ACCB)",1,"Nos",20,7,30,["SLD"]],["Inverter duty transformer (IDT)",1,"Nos",20,3,90,["SLD"]],["33 kV HT panel",1,"Nos",21,3,50,["SLD"]],["HT termination kits","TBC","Set",21,5,20,["SLD"]],["Earthing & lightning protection material","TBC","Lot",18,5,15,["GA"]],["SCADA, weather station & CCTV","TBC","Lot",23,5,30,[]],["Fencing / boundary wall material & gate","TBC","Lot",8,5,15,["GA"]],["Civil material (cement, rebar, aggregate)","TBC","Lot",12,0,7,[]]];
-function schEnsure(pid){
-  db.sched=db.sched||{};
-  if(!db.sched[pid]){
-    var p=db.projects.find(function(x){return x.id===pid})||{acMW:5,dcMWp:6};
-    var q=function(k){return k==="MOD"?Math.round(p.dcMWp*1e6/600/2):k==="INV"?Math.ceil(p.acMW*1000/320):k==="AC800"?Math.round(800*p.acMW):k==="AC220"?Math.round(220*p.acMW):k};
-    db.sched[pid]={t0:"2026-11-05",sla:2,
-      acts:SCH_A.map(function(a){return{id:a[0],n:a[1],d:a[2],p:a[3],l:a[4],r:a[5]}}),
-      mats:SCH_M.map(function(m,i){return{i:i+1,n:m[0],q:q(m[1]),u:m[2],a:m[3],b:m[4],lead:m[5],dr:m[6],c:m[7]||0}})};
-  }
-  return db.sched[pid];
-}
-/* Drawing status is read live from the portal's MDL register (single source of truth) */
-function schDraw(pid,S){
-  var t=schToday(), out={};
-  Object.keys(SCH_DG).forEach(function(k){
-    var g=SCH_DG[k], rows=g.sr.map(function(s){return (db.mdlTracker||{})[pid+"_"+s]||{}});
-    var subs=rows.filter(function(r){return r.consultantDate&&r.status!=="Not Submitted"});
-    var sub=subs.length===rows.length?Math.max.apply(null,subs.map(function(r){return schU(r.consultantDate)})):null;
-    var allAp=rows.every(function(r){return r.status==="Approved"});
-    var ap=allAp?Math.max.apply(null,rows.map(function(r){return r.approvedDate?schU(r.approvedDate):t})):null;
-    var due=sub==null?null:sub+ +S.sla, late=due==null?0:Math.max(0,(ap==null?t:ap)-due);
-    out[k]={n:g.n,sr:g.sr,sub:sub,ap:ap,due:due,late:late,rel:ap==null?Math.max(t,due==null?t:due):ap,have:subs.length,tot:rows.length};
-  });
-  return out;
-}
-function schMrev(m,B,R){var pl=B.s[m.a]-m.b,rl=m.dr.length?Math.max.apply(null,m.dr.map(function(x){return R[x].rel})):null,lp=pl-m.lead,rev=rl==null?pl:Math.max(pl,rl+ +m.lead);return{pl:pl,lp:lp,rl:rl,rev:rev,fl:rl==null?null:lp-rl,sl:rev-pl}}
-function schRun(S,B,R){
-  var T=schU(S.t0),s={},f={};
-  S.acts.forEach(function(a){
-    var ps=String(a.p).split(",").map(Number).filter(function(x){return f[x]!=null});
-    var st=ps.length?Math.max.apply(null,ps.map(function(x){return f[x]}))+1+ +a.l:T;
-    if(B) S.mats.filter(function(m){return m.a==a.id}).forEach(function(m){st=Math.max(st,schMrev(m,B,R).rev+ +m.b)});
-    s[a.id]=st; f[a.id]=st+ +a.d-1;
-  });
-  return{s:s,f:f};
-}
-function schCalc(pid){var S=schEnsure(pid),R=schDraw(pid,S),B=schRun(S),C=schRun(S,B,R);return{S:S,R:R,B:B,C:C,bc:Math.max.apply(null,Object.values(B.f)),cc:Math.max.apply(null,Object.values(C.f))}}
-function schSet(pid,t,id,f,v){
-  if(!canEditSite()) return; var S=schEnsure(pid);
-  if(t==="p"){ if(f==="t0"&&v) S.t0=v; if(f==="sla") S.sla=Math.max(0,+v||0); }
-  else if(t==="a"){ var a=S.acts.find(function(x){return x.id==id}); a[f]=f==="p"?String(v).replace(/[^0-9,]/g,""):(+v||0); }
-  else if(t==="m"){ var m=S.mats.find(function(x){return x.i==id}); m[f]=+v||0; }
-  saveDB(); renderActivePage();
-}
-function schTab(t){SCH_TAB=t;renderActivePage()}
-function schAlertHTML(pid,c){
-  var pend=Object.keys(c.R).filter(function(k){return c.R[k].late>0});
-  if(!pend.length) return '<div class="bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl px-4 py-2.5 text-xs font-semibold">All submitted drawings are within the '+c.S.sla+'-day approval limit.</div>';
-  return '<div class="bg-rose-50 border border-rose-300 border-l-4 border-l-rose-600 rounded-xl px-4 py-3 text-xs text-rose-900 space-y-1.5"><p class="font-bold text-sm text-rose-700">Client action pending – drawing approvals are holding up procurement</p><ul class="list-disc pl-5 space-y-1">'+pend.map(function(k){
-    var d=c.R[k], bl=c.S.mats.filter(function(m){return m.dr.indexOf(k)>=0}), mx=Math.max.apply(null,[0].concat(bl.map(function(m){return schMrev(m,c.B,c.R).sl})));
-    var names=Array.from(new Set(bl.map(function(m){return m.n.split(" – ")[0].split(":")[0]}))).join(", ");
-    return '<li><b>'+_esc(d.n)+'</b> – submitted '+schF(d.sub)+', approval due '+schF(d.due)+'; '+(d.ap!=null?"approved late":"still pending")+', <b>'+d.late+' day(s)</b> beyond the '+c.S.sla+'-day limit. Orders blocked: '+_esc(names)+'. '+(mx>0?'Delivery already slipping by up to <b>'+mx+' days</b>.':'Float to the latest PO date is being used up.')+'</li>'}).join('')+'</ul><p>Each further day of delay in approval delays order release, material delivery and project execution. Forecast COD: <b>'+schF(c.cc)+'</b> (baseline '+schF(c.bc)+').</p></div>';
-}
-function schBanner(sla){return '<div class="bg-amber-50 border border-amber-300 border-l-4 border-l-amber-500 rounded-xl px-4 py-3 text-xs text-amber-900"><b>Important – delivery timelines depend on drawing approvals.</b> Every material delivery date in this plan is linked to approval of the relevant drawings, which the client is to give within <b>'+sla+' days</b> of submission. Any delay in drawing approval delays order placement, material delivery and ultimately project execution and COD, day for day. <b>Scope note:</b> supply of solar PV modules is in the client’s scope, and the evacuation system from the DP structure to the remote substation and remote bay is outside FSGE scope; both are shown only as external interfaces.</div>'}
-function schIn(pid,t,id,f,val,w){
-  if(!canEditSite()) return '<span class="mono">'+_esc(val)+'</span>';
-  return '<input class="edit-input" style="width:'+(w||56)+'px" value="'+_esc(val)+'" onchange="schSet(\''+pid+'\',\''+t+'\',\''+id+'\',\''+f+'\',this.value)">';
-}
-function renderSchedPage(container,model){
-  var ids=["lakhana","udi","rajawali"], sel=globalSiteFilter, h=renderSiteSelectorBar("Execution Schedule & Material Delivery Plan");
-  var th='class="px-2 py-2 text-left whitespace-nowrap text-[11px] font-semibold text-slate-500 bg-slate-50 sticky top-0"', td='class="px-2 py-1.5 border-t border-slate-100 align-middle"';
-  if(sel==="ALL"){
-    h+=schBanner(2)+'<div class="bg-white border border-slate-200 rounded-xl overflow-auto"><table class="w-full text-xs"><thead><tr><th '+th.slice(6)+'>Site</th><th '+th.slice(6)+'>T0</th><th '+th.slice(6)+'>Baseline COD</th><th '+th.slice(6)+'>Forecast COD</th><th '+th.slice(6)+'>Delay</th><th '+th.slice(6)+'>Drawings past limit</th><th '+th.slice(6)+'></th></tr></thead><tbody>'+ids.map(function(pid){
-      var c=schCalc(pid),p=db.projects.find(function(x){return x.id===pid}),n=Object.keys(c.R).filter(function(k){return c.R[k].late>0}).length,sl=c.cc-c.bc;
-      return '<tr><td '+td.slice(6)+'><b>'+_esc(p?p.name||p.label||pid:pid)+'</b></td><td '+td.slice(6)+'>'+schF(schU(c.S.t0))+'</td><td '+td.slice(6)+'>'+schF(c.bc)+'</td><td '+td.slice(6)+' style="font-weight:700">'+schF(c.cc)+'</td><td '+td.slice(6)+' class="'+(sl>0?"text-rose-600 font-bold":"")+'">'+sl+' d</td><td '+td.slice(6)+' class="'+(n?"text-rose-600 font-bold":"")+'">'+n+'</td><td '+td.slice(6)+'><button class="px-2 py-1 rounded border border-slate-300 font-semibold" onclick="setSiteFilter(\''+pid+'\')">Open</button></td></tr>'}).join('')+'</tbody></table></div><p class="text-[11px] text-slate-500">Select a site above to view and edit its schedule.</p>';
-    container.innerHTML=h; return;
-  }
-  var pid=sel, c=schCalc(pid), S=c.S, T=schU(S.t0), sl=c.cc-c.bc, pend=Object.keys(c.R).filter(function(k){return c.R[k].late>0}).length;
-  var kp=function(l,v,bad){return '<div class="bg-white border '+(bad?"border-rose-300 bg-rose-50":"border-slate-200")+' rounded-xl p-3"><p class="text-[10px] uppercase font-semibold text-slate-500">'+l+'</p><p class="text-lg font-bold mono '+(bad?"text-rose-600":"")+'">'+v+'</p></div>'};
-  h+=schBanner(S.sla)+'<div class="grid grid-cols-2 lg:grid-cols-5 gap-3">'+kp("Project start (T0)",schF(T))+kp("Baseline COD",schF(c.bc))+kp("Forecast COD",schF(c.cc),sl>0)+kp("Delay from approvals",sl+" days",sl>0)+kp("Drawings past limit",pend,pend>0)+'</div>'+schAlertHTML(pid,c);
-  h+='<div class="flex flex-wrap items-center gap-2">'+[["s","Execution schedule"],["m","Material delivery plan"],["d","Drawing approvals"]].map(function(x){return '<button onclick="schTab(\''+x[0]+'\')" class="px-3 py-1.5 rounded-full text-xs font-semibold border '+(SCH_TAB===x[0]?"bg-slate-900 text-white border-slate-900":"bg-white border-slate-300")+'">'+x[1]+'</button>'}).join('')+'<span class="ml-auto text-[11px] text-slate-500">T0 '+schIn(pid,"p","","t0",S.t0,110)+' &nbsp; Approval limit (days) '+schIn(pid,"p","","sla",S.sla,44)+'</span></div>';
-  if(SCH_TAB==="s"){
-    var lo=T, hi=Math.max(c.cc,Math.max.apply(null,Object.values(c.B.f)))+1, sp=hi-lo, pc=function(a,b){return 'left:'+((a-lo)/sp*100).toFixed(2)+'%;width:'+Math.max(0.6,(b-a+1)/sp*100).toFixed(2)+'%'};
-    h+='<div class="bg-white border border-slate-200 rounded-xl overflow-auto" style="max-height:640px"><table class="w-full text-xs"><thead><tr><th '+th+'>ID</th><th '+th+'>Activity</th><th '+th+'>Dur</th><th '+th+'>Pred.</th><th '+th+'>Lag</th><th '+th+'>Start</th><th '+th+'>Finish</th><th '+th+'>Slip</th><th '+th+'>Responsibility</th><th '+th+' style="min-width:360px">Timeline (grey = baseline)</th></tr></thead><tbody>'+S.acts.map(function(a){
-      var s=c.C.f[a.id]-c.B.f[a.id], out=a.id===22;
-      return (SCH_SEC[a.id]?'<tr><td colspan="10" class="px-2 py-1.5 bg-slate-100 font-bold text-blue-800">'+SCH_SEC[a.id]+'</td></tr>':'')+'<tr class="'+(s>0?"bg-rose-50":"")+'"><td '+td+'>'+a.id+'</td><td '+td+' style="white-space:normal;min-width:260px">'+_esc(a.n)+(out?' <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">Outside scope</span>':'')+(a.id===4?' <span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[10px] font-bold">Client approval</span>':'')+'</td><td '+td+'>'+schIn(pid,"a",a.id,"d",a.d)+'</td><td '+td+'>'+schIn(pid,"a",a.id,"p",a.p,90)+'</td><td '+td+'>'+schIn(pid,"a",a.id,"l",a.l)+'</td><td '+td+'>'+schF(c.C.s[a.id])+'</td><td '+td+'>'+schF(c.C.f[a.id])+'</td><td '+td+' class="'+(s>0?"text-rose-600 font-bold":"")+'">'+(s>0?"+"+s+" d":"–")+'</td><td '+td+'>'+_esc(a.r)+'</td><td '+td+'><div class="relative" style="height:16px"><i class="absolute rounded" style="'+pc(c.B.s[a.id],c.B.f[a.id])+';top:11px;height:3px;background:#b9c2cf"></i><i class="absolute rounded" style="'+pc(c.C.s[a.id],c.C.f[a.id])+';top:2px;height:8px;background:'+(out?"repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 4px,#fff 4px,#fff 8px)":s>0?"#e11d48":"#2f6fb3")+'"></i></div></td></tr>'}).join('')+'</tbody></table></div>';
-  } else if(SCH_TAB==="m"){
-    h+='<div class="bg-white border border-slate-200 rounded-xl overflow-auto" style="max-height:640px"><table class="w-full text-xs"><thead><tr>'+["#","Material / equipment","Qty","Linked drawings","Buffer","Lead (d)","Activity","Planned delivery","Latest PO","Earliest PO release","PO float","Revised delivery","Slip"].map(function(x){return '<th '+th+'>'+x+'</th>'}).join('')+'</tr></thead><tbody>'+S.mats.map(function(m){
-      var r=schMrev(m,c.B,c.R), bad=r.sl>0||(r.fl!=null&&r.fl<0);
-      return '<tr class="'+(bad?"bg-rose-50":"")+'"><td '+td+'>'+m.i+'</td><td '+td+' style="white-space:normal;min-width:240px">'+_esc(m.n)+(m.c?' <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">Client supply</span>':'')+'</td><td '+td+'>'+_esc(m.q)+' '+m.u+'</td><td '+td+'>'+(m.dr.map(function(x){return '<span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold '+(c.R[x].late>0?"bg-rose-100 text-rose-700":c.R[x].ap!=null?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-600")+'">'+x+'</span> '}).join('')||'–')+'</td><td '+td+'>'+schIn(pid,"m",m.i,"b",m.b)+'</td><td '+td+'>'+schIn(pid,"m",m.i,"lead",m.lead)+'</td><td '+td+'>ID '+m.a+'</td><td '+td+'>'+schF(r.pl)+'</td><td '+td+'>'+schF(r.lp)+'</td><td '+td+'>'+(r.rl==null?"–":schF(r.rl))+'</td><td '+td+' class="'+(r.fl!=null&&r.fl<0?"text-rose-600 font-bold":"")+'">'+(r.fl==null?"–":r.fl+" d")+'</td><td '+td+'><b>'+schF(r.rev)+'</b></td><td '+td+' class="'+(r.sl>0?"text-rose-600 font-bold":"")+'">'+(r.sl>0?"+"+r.sl+" d":"–")+'</td></tr>'}).join('')+'</tbody></table></div><p class="text-[11px] text-slate-500">Planned delivery = consuming activity start − buffer. Latest PO = planned delivery − lead time. Earliest PO release = drawing approval date (or today while approval is pending). Negative PO float means the order cannot be placed in time, so delivery and activity dates move.</p>';
-  } else {
-    h+='<div class="bg-white border border-slate-200 rounded-xl overflow-auto"><table class="w-full text-xs"><thead><tr>'+["Drawing group","MDL Sr. no.","Submitted","Approval due","Approved on","Status","Holds orders for"].map(function(x){return '<th '+th+'>'+x+'</th>'}).join('')+'</tr></thead><tbody>'+Object.keys(c.R).map(function(k){
-      var d=c.R[k], bl=Array.from(new Set(S.mats.filter(function(m){return m.dr.indexOf(k)>=0}).map(function(m){return m.n.split(" – ")[0].split(":")[0]})));
-      return '<tr class="'+(d.late>0?"bg-rose-50":"")+'"><td '+td+'><b>'+_esc(d.n)+'</b></td><td '+td+'>'+d.sr.join(", ")+'</td><td '+td+'>'+(d.sub==null?"Not submitted"+(d.have?" ("+d.have+" of "+d.tot+")":""):schF(d.sub))+'</td><td '+td+'>'+schF(d.due)+'</td><td '+td+'>'+schF(d.ap)+'</td><td '+td+' class="'+(d.late>0?"text-rose-600 font-bold":"")+'">'+(d.sub==null?"–":d.late>0?d.late+" d beyond limit"+(d.ap!=null?" (approved late)":" (pending)"):"Within limit")+'</td><td '+td+' style="white-space:normal">'+_esc(bl.join(", "))+'</td></tr>'}).join('')+'</tbody></table></div><p class="text-[11px] text-slate-500">Dates come live from the <b>Drawing (MDL) Status</b> register: submission = consultant submission date, approval = date marked Approved. Update them there; this page recalculates automatically. Approval due = submission date + approval limit.</p>';
-  }
-  container.innerHTML=h;
-}
-</script>
 </body>
 </html>
